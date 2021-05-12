@@ -3,7 +3,9 @@
 #include <string> 
 #include <chrono>
 #include <cmath>
-#define DEBUG true
+#define DEBUG false
+#define BENCH false
+#define TEST false
 
 int ido = 0;
 long long nodeCounter = 0;
@@ -27,6 +29,21 @@ struct SufLink {
     }
 };
 
+struct TchildMark {
+    TtrieNode* childLink;
+    int childVectorInd;
+
+    TchildMark() {
+        childLink = nullptr; 
+        childVectorInd = -1;
+    }
+
+    TchildMark(TtrieNode* chl, int cvi) {
+        childLink = chl;
+        childVectorInd = cvi;
+    }
+};
+
 
 struct TtrieNode {
     int beg;
@@ -42,7 +59,7 @@ struct TtrieNode {
     int id;
 
     int len;
-    TtrieNode** childMask;
+    TchildMark* childMask;
 
     TtrieNode (std::string bod, TtrieNode* par, int* endInd) {
         beg = 0;
@@ -53,7 +70,7 @@ struct TtrieNode {
         text = bod;
         children = std::vector<TtrieNode*>(0);
         parent = par;
-        childMask = (TtrieNode**)calloc(27,sizeof(TtrieNode*));
+        childMask = new TchildMark[27];
 
         SL.Link = nullptr;
         SL.ind = -1;
@@ -71,7 +88,7 @@ struct TtrieNode {
         text = std::string();
         children = std::vector<TtrieNode*>(0);
         parent = par;
-        childMask = (TtrieNode**)calloc(27,sizeof(TtrieNode*));
+        childMask = new TchildMark[27];
 
         SL.Link = nullptr;
         SL.ind = -1;
@@ -84,7 +101,7 @@ struct TtrieNode {
         for (int i = 0; i < (int)children.size(); ++i) {
             delete children[i];
         }
-        free(childMask);
+        delete[] childMask;
     }
 
     bool List() {
@@ -141,7 +158,7 @@ struct TtrieNode {
 
         if (ps != -1) {
             parent->children[ps] = Past;
-            parent->childMask[Past->text[Past->beg] - 'a'] = Past; 
+            parent->childMask[Past->text[Past->beg] - 'a'].childLink = Past; 
         }
         parent = Past;
 
@@ -168,10 +185,10 @@ struct TtrieNode {
     void AddChild (TtrieNode* ch) {
         children.push_back(ch);
         if(ch->text[ch->beg] == '$') {
-            childMask[26] = ch;
+            childMask[26] = TchildMark(ch,children.size() - 1);
         }
         else
-        childMask[ch->text[ch->beg] - 'a'] = ch;
+        childMask[ch->text[ch->beg] - 'a'] = TchildMark(ch, children.size() - 1);
     }
 
     void AddChildOV(const std::string& chS) {
@@ -196,10 +213,10 @@ struct TtrieNode {
 
             children.push_back(Past);
             if(Past->text[Past->beg] == '$') {
-                childMask[26] = Past;
+                childMask[26] = TchildMark(Past, children.size() - 1);
             }
             else
-            childMask[Past->text[Past->beg] - 'a'] = Past;
+            childMask[Past->text[Past->beg] - 'a'] = TchildMark(Past, children.size() - 1);
         }
         catch (std::bad_alloc& a) {
             throw - 1;
@@ -216,10 +233,10 @@ struct TtrieNode {
 
             children.push_back(Past);
             if(Past->text[Past->beg] == '$') {
-                childMask[26] = Past;
+                childMask[26] = TchildMark(Past, children.size() - 1);
             }
             else
-            childMask[Past->text[Past->beg] - 'a'] = Past;
+            childMask[Past->text[Past->beg] - 'a'] = TchildMark(Past, children.size() - 1);
         }
         catch (std::bad_alloc& a) {
             throw - 1;
@@ -245,11 +262,11 @@ struct TtrieNode {
         //возвращает указатель на ребенка, чья строка начинается с буквы firstLetter
         //работает только если бор корректно построен
         if(firstLetter == '$') {
-            return childMask[26] == nullptr ? nullptr : childMask[26];
+            return childMask[26].childLink == nullptr ? nullptr : childMask[26].childLink;
         }
 
-        if(childMask[firstLetter - 'a'] != nullptr) {
-            return childMask[firstLetter - 'a'];
+        if(childMask[firstLetter - 'a'].childLink != nullptr) {
+            return childMask[firstLetter - 'a'].childLink;
         }
 
         return nullptr;
@@ -271,11 +288,12 @@ struct TtrieNode {
     int childInd(char firstLetter) {
         //возвращает указатель на ребенка, чья строка начинается с буквы firstLetter
         //работает только если бор корректно построен
+        if(firstLetter == '$') {
+            return childMask[26].childLink == nullptr ? -1 : childMask[26].childVectorInd;
+        }
 
-        for (int i = 0; i < (int)children.size(); ++i) {
-            if (children[i]->text[children[i]->beg] == firstLetter) {
-                return i;
-            }
+        if(childMask[firstLetter - 'a'].childLink != nullptr) {
+            return childMask[firstLetter - 'a'].childVectorInd;
         }
 
         return -1;
@@ -511,25 +529,33 @@ struct TstartPos {
     }
 };
 
+long long prop = 0;
+int roots = 0;
+int seps = 0;
+int ads = 0;
+int stops = 0;
+
 TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позиция в которую мы перешли*/, std::string text, int rightBD, TtrieNode* fromSLtoPOINT /*узел, в который запишем ссылку*/) {
     
     if(DEBUG)printf("(%c) approch node: %d term: %d / %d\n", start->text[rightBD], start->id, term, rightBD);
-
+    int counter = 0;
     while (start != root && start->Len() - start->SelfLen() >= term) {
         start = start->parent;
+        ++counter;
     }
 
     term -= (start->Len() - start->SelfLen());
 
-    if (DEBUG)printf("(%c) passed to node: %d term: %d / %d\n", start->text[rightBD], start->id, term, rightBD);
+    if (DEBUG)printf("(%c) passed to node: %d term: %d / %d\nsubsteps: %d\n", start->text[rightBD], start->id, term, rightBD, counter);
+    prop += counter;
     /*if (start->id == 0 && term > 0) {
         printf("auch\n");
     }*/
 
     if (DEBUG) {
-        printf("\n\n");
-        PrintTrie(root, 0);
-        printf("\n\n");
+        // printf("\n\n");
+        // PrintTrie(root, 0);
+        // printf("\n\n");
     }
 
     //start - узел, на котором было продление
@@ -546,6 +572,7 @@ TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позици�
 
     //отдельно обработаем попадание в корень
     if (start == root) {
+        ++roots;
         if (term <= 0) {
             TtrieNode* ch = root->child(text[rightBD]);
 
@@ -610,6 +637,7 @@ TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позици�
 
 
         if (start->End() < start->beg + term) {
+            ads++;
             //если мы в точке разрыва, откуда выходят дети
 
             //эту ссылку больше не юзаем
@@ -669,11 +697,13 @@ TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позици�
         }
         else
         if (start->End() >= term && start->text[start->beg + term] == text[rightBD]) {
+            stops++;
             //елси можно напрямую продлить вхождение, то ничего не делаем
             
             return TstartPos(term + (start->Len() - start->SelfLen()), start, fromSLtoPOINT);
         }
         else {
+            seps++;
             //если след. буква строки узла отлична от буквы в доб. строке, то нужно произвести разделение
 
             //прежде проверим, что мы не в конце строки и не можем продолжить проверку на ребенке
@@ -881,7 +911,7 @@ public:
 
 
             if (cur->sInd(pos) != exp[i]) {
-                if(DEBUG) printf("location error: in-node missmatch (node id: %d| pos in exmmp-> %d|%c|<-exmp|trie->|%c|%d <-pos in node)\n", cur->id, i, exp[i], cur->sInd(pos), pos);
+                if(DEBUG) printf("location error: in-node mismatch (node id: %d| pos in exmmp-> %d|%c|<-exmp|trie->|%c|%d <-pos in node)\n", cur->id, i, exp[i], cur->sInd(pos), pos);
                 return std::vector<int>();
             }
 
@@ -1010,8 +1040,8 @@ TsuffixTrie* constructTree(std::string text) {
 
     for (int i = 0; i < (int)text.size(); ++i) {
         int k = trie->Add(text, i);
-        if (DEBUG) trie->Print();
-        if (DEBUG) printf("----------------\n");
+        //if (DEBUG) trie->Print();
+        //if (DEBUG) printf("----------------\n");
         if (k != 0) {
             return nullptr;
         }
@@ -1028,13 +1058,13 @@ bool AreEqual(TsuffixTrie* lhs, TsuffixTrie* rhs) {
     std::string R = Bypass(std::string(), rhs->Root(), RIsNum);
 
     if (L.size() != R.size()) {
-        printf("size missmatch\n");
+        printf("size mismatch\n");
         std::cout << L << std::endl <<  R << std::endl;
         return 0;
     }
     for (int i = 0; i < (int)L.size(); ++i) {
         if (L[i] != R[i]) {
-            printf("missmatch in pos %d\n", i);
+            printf("mismatch in pos %d\n", i);
             std::cout << L << std::endl << R << std::endl;
             for (int k = 0; k < i; ++k) {
                 printf(" ");
@@ -1090,25 +1120,34 @@ int main() {
         printf("%d\n", res[i] + 1);
     }
 
-    trie->Print();
-    
-    auto tm1 = std::chrono::steady_clock::now();
-    auto delt = tm1 - tm0;
-    std::cerr << "test complete| " << std::chrono::duration_cast<std::chrono::milliseconds>(delt).count()<< "ms" <<std::endl;
-    std::cerr << "\t nodes visited: " << nodeCounter << std::endl;
-    auto delt1 = tm12 - tm11;
-    std::cerr << "\t construction: " << std::chrono::duration_cast<std::chrono::milliseconds>(delt1).count()<< "ms" <<std::endl;
-    auto delt2 = tm21 - tm12;
-    std::cerr << "\t location: " << std::chrono::duration_cast<std::chrono::milliseconds>(delt2).count()<< "ms" <<std::endl;
-    auto delt3 = tm22 - tm21;
-    std::cerr << "\t sorting: " << std::chrono::duration_cast<std::chrono::milliseconds>(delt3).count()<< "ms" <<std::endl;
-
-    TsuffixTrie* test = constructTestTree(text);
-    if(AreEqual(test, trie)) {
-        printf("\n\n sructure OK\n");
+    //trie->Print();
+    if(BENCH) {
+        auto tm1 = std::chrono::steady_clock::now();
+        auto delt = tm1 - tm0;
+        std::cerr << "test complete| " << std::chrono::duration_cast<std::chrono::milliseconds>(delt).count()<< "ms" <<std::endl;
+        std::cerr << "\t nodes visited: " << nodeCounter << std::endl;
+        std::cerr << "\t   adtional nodes passed: " << prop << std::endl;
+        std::cerr << "\t\t roots passed: " << roots <<std::endl;
+        std::cerr << "\t\t in-sep added: " << ads <<std::endl;
+        std::cerr << "\t\t separatopns made: " << seps <<std::endl;
+        std::cerr << "\t\t stopped in nodes: " << stops <<std::endl;
+        auto delt1 = tm12 - tm11;
+        std::cerr << "\t construction: " << std::chrono::duration_cast<std::chrono::milliseconds>(delt1).count()<< "ms" <<std::endl;
+        auto delt2 = tm21 - tm12;
+        std::cerr << "\t location: " << std::chrono::duration_cast<std::chrono::milliseconds>(delt2).count()<< "ms" <<std::endl;
+        auto delt3 = tm22 - tm21;
+        std::cerr << "\t sorting: " << std::chrono::duration_cast<std::chrono::milliseconds>(delt3).count()<< "ms" <<std::endl;
     }
-    else {
-        printf("\n\n structure missmatch\n");
+
+    if(TEST) { //только на размерах сроки < 200
+        TsuffixTrie* test = constructTestTree(text);
+        if(AreEqual(test, trie)) {
+            printf("\n\n sructure OK\n");
+        }
+        else {
+            printf("\n\n structure mismatch\n");
+        }
+        delete test;
     }
 
     delete trie;
