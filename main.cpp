@@ -3,7 +3,7 @@
 #include <string> 
 #include <chrono>
 #include <cmath>
-#define DEBUG false
+#define DEBUG true
 
 int ido = 0;
 long long nodeCounter = 0;
@@ -42,6 +42,7 @@ struct TtrieNode {
     int id;
 
     int len;
+    TtrieNode** childMask;
 
     TtrieNode (std::string bod, TtrieNode* par, int* endInd) {
         beg = 0;
@@ -52,6 +53,7 @@ struct TtrieNode {
         text = bod;
         children = std::vector<TtrieNode*>(0);
         parent = par;
+        childMask = (TtrieNode**)calloc(27,sizeof(TtrieNode*));
 
         SL.Link = nullptr;
         SL.ind = -1;
@@ -69,6 +71,7 @@ struct TtrieNode {
         text = std::string();
         children = std::vector<TtrieNode*>(0);
         parent = par;
+        childMask = (TtrieNode**)calloc(27,sizeof(TtrieNode*));
 
         SL.Link = nullptr;
         SL.ind = -1;
@@ -78,13 +81,14 @@ struct TtrieNode {
     }
 
     ~TtrieNode() {
-        for (int i = 0; i < children.size(); ++i) {
+        for (int i = 0; i < (int)children.size(); ++i) {
             delete children[i];
         }
+        free(childMask);
     }
 
     bool List() {
-        return children.size() == 0 ? true : false;
+        return (int)children.size() == 0 ? true : false;
     }
 
     int End() {
@@ -107,9 +111,9 @@ struct TtrieNode {
     }
  
     TtrieNode* Deseparate(int pos) {
-        //разделение узла по инжексу pos в его строке
-        //часть строки до индекса (включительно) остается в новом узле
-        //старый узел является ребенком нового, в нем проделжение строки, а его дети – бывшие дети нового
+        //СЂР°Р·РґРµР»РµРЅРёРµ СѓР·Р»Р° РїРѕ РёРЅР¶РµРєСЃСѓ pos РІ РµРіРѕ СЃС‚СЂРѕРєРµ
+        //С‡Р°СЃС‚СЊ СЃС‚СЂРѕРєРё РґРѕ РёРЅРґРµРєСЃР° (РІРєР»СЋС‡РёС‚РµР»СЊРЅРѕ) РѕСЃС‚Р°РµС‚СЃСЏ РІ РЅРѕРІРѕРј СѓР·Р»Рµ
+        //СЃС‚Р°СЂС‹Р№ СѓР·РµР» СЏРІР»СЏРµС‚СЃСЏ СЂРµР±РµРЅРєРѕРј РЅРѕРІРѕРіРѕ, РІ РЅРµРј РїСЂРѕРґРµР»Р¶РµРЅРёРµ СЃС‚СЂРѕРєРё, Р° РµРіРѕ РґРµС‚Рё вЂ“ Р±С‹РІС€РёРµ РґРµС‚Рё РЅРѕРІРѕРіРѕ
 
         if (DEBUG)printf("sep: %d |%d| %d\n", beg, pos, End());
 
@@ -137,17 +141,18 @@ struct TtrieNode {
 
         if (ps != -1) {
             parent->children[ps] = Past;
+            parent->childMask[Past->text[Past->beg] - 'a'] = Past; 
         }
         parent = Past;
 
-        Past->children.push_back(this);
-        
+        Past->AddChild(this);
+        Past->SL.Link = nullptr;
 
         return Past;
     }
 
     bool IsList() {
-        if (children.size() == 0) {
+        if ((int)children.size() == 0) {
             return true;
         }
         else {
@@ -162,7 +167,26 @@ struct TtrieNode {
 
     void AddChild (TtrieNode* ch) {
         children.push_back(ch);
+        if(ch->text[ch->beg] == '$') {
+            childMask[26] = ch;
+        }
+        else
+        childMask[ch->text[ch->beg] - 'a'] = ch;
     }
+
+    void AddChildOV(const std::string& chS) {
+        try {
+            TtrieNode* Past = new TtrieNode(chS, this, endl);
+            Past->beg = end + 1;
+            Past->end = end + 1;
+
+            children.push_back(Past);
+        }
+        catch (std::bad_alloc& a) {
+            throw - 1;
+        }
+    }
+
 
     void AddChild(const std::string& chS) {
         try {
@@ -171,13 +195,18 @@ struct TtrieNode {
             Past->end = end + 1;
 
             children.push_back(Past);
+            if(Past->text[Past->beg] == '$') {
+                childMask[26] = Past;
+            }
+            else
+            childMask[Past->text[Past->beg] - 'a'] = Past;
         }
-        catch (std::bad_alloc a) {
+        catch (std::bad_alloc& a) {
             throw - 1;
         }
     }
 
-    void AddChild(int left, int right) { //пустой ребенок с границами
+    void AddChild(int left, int right) { //РїСѓСЃС‚РѕР№ СЂРµР±РµРЅРѕРє СЃ РіСЂР°РЅРёС†Р°РјРё
         try {
             TtrieNode* Past = new TtrieNode(this, endl);
             Past->text = text;
@@ -186,15 +215,22 @@ struct TtrieNode {
             Past->len = -1;
 
             children.push_back(Past);
+            if(Past->text[Past->beg] == '$') {
+                childMask[26] = Past;
+            }
+            else
+            childMask[Past->text[Past->beg] - 'a'] = Past;
         }
-        catch (std::bad_alloc a) {
+        catch (std::bad_alloc& a) {
             throw - 1;
         }
     }
 
-    TtrieNode* child(char firstLetter) {
-        //возвращает указатель на ребенка, чья строка начинается с буквы firstLetter
-        //работает только если бор корректно построен
+    
+
+    TtrieNode* childOV(char firstLetter) {
+        //РІРѕР·РІСЂР°С‰Р°РµС‚ СѓРєР°Р·Р°С‚РµР»СЊ РЅР° СЂРµР±РµРЅРєР°, С‡СЊСЏ СЃС‚СЂРѕРєР° РЅР°С‡РёРЅР°РµС‚СЃСЏ СЃ Р±СѓРєРІС‹ firstLetter
+        //СЂР°Р±РѕС‚Р°РµС‚ С‚РѕР»СЊРєРѕ РµСЃР»Рё Р±РѕСЂ РєРѕСЂСЂРµРєС‚РЅРѕ РїРѕСЃС‚СЂРѕРµРЅ
 
         for (TtrieNode* iter : children) {
             if (iter->text[iter->beg] == firstLetter) {
@@ -205,12 +241,52 @@ struct TtrieNode {
         return nullptr;
     }
 
-    int childInd(char firstLetter) {
-        //возвращает указатель на ребенка, чья строка начинается с буквы firstLetter
-        //работает только если бор корректно построен
+    TtrieNode* child(char firstLetter) {
+        //РІРѕР·РІСЂР°С‰Р°РµС‚ СѓРєР°Р·Р°С‚РµР»СЊ РЅР° СЂРµР±РµРЅРєР°, С‡СЊСЏ СЃС‚СЂРѕРєР° РЅР°С‡РёРЅР°РµС‚СЃСЏ СЃ Р±СѓРєРІС‹ firstLetter
+        //СЂР°Р±РѕС‚Р°РµС‚ С‚РѕР»СЊРєРѕ РµСЃР»Рё Р±РѕСЂ РєРѕСЂСЂРµРєС‚РЅРѕ РїРѕСЃС‚СЂРѕРµРЅ
+        if(firstLetter == '$') {
+            return childMask[26] == nullptr ? nullptr : childMask[26];
+        }
 
-        for (int i = 0; i < children.size(); ++i) {
+        if(childMask[firstLetter - 'a'] != nullptr) {
+            return childMask[firstLetter - 'a'];
+        }
+
+        return nullptr;
+    }
+
+    TtrieNode* childBB(char firstLetter) {
+        //РІРѕР·РІСЂР°С‰Р°РµС‚ СѓРєР°Р·Р°С‚РµР»СЊ РЅР° СЂРµР±РµРЅРєР°, С‡СЊСЏ СЃС‚СЂРѕРєР° РЅР°С‡РёРЅР°РµС‚СЃСЏ СЃ Р±СѓРєРІС‹ firstLetter
+        //СЂР°Р±РѕС‚Р°РµС‚ С‚РѕР»СЊРєРѕ РµСЃР»Рё Р±РѕСЂ РєРѕСЂСЂРµРєС‚РЅРѕ РїРѕСЃС‚СЂРѕРµРЅ
+
+        for (TtrieNode* iter : children) {
+            if (iter->text[0] == firstLetter) {
+                return iter;
+            }
+        }
+
+        return nullptr;
+    }
+
+    int childInd(char firstLetter) {
+        //РІРѕР·РІСЂР°С‰Р°РµС‚ СѓРєР°Р·Р°С‚РµР»СЊ РЅР° СЂРµР±РµРЅРєР°, С‡СЊСЏ СЃС‚СЂРѕРєР° РЅР°С‡РёРЅР°РµС‚СЃСЏ СЃ Р±СѓРєРІС‹ firstLetter
+        //СЂР°Р±РѕС‚Р°РµС‚ С‚РѕР»СЊРєРѕ РµСЃР»Рё Р±РѕСЂ РєРѕСЂСЂРµРєС‚РЅРѕ РїРѕСЃС‚СЂРѕРµРЅ
+
+        for (int i = 0; i < (int)children.size(); ++i) {
             if (children[i]->text[children[i]->beg] == firstLetter) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    int childIndBB(char firstLetter) {
+        //РІРѕР·РІСЂР°С‰Р°РµС‚ СѓРєР°Р·Р°С‚РµР»СЊ РЅР° СЂРµР±РµРЅРєР°, С‡СЊСЏ СЃС‚СЂРѕРєР° РЅР°С‡РёРЅР°РµС‚СЃСЏ СЃ Р±СѓРєРІС‹ firstLetter
+        //СЂР°Р±РѕС‚Р°РµС‚ С‚РѕР»СЊРєРѕ РµСЃР»Рё Р±РѕСЂ РєРѕСЂСЂРµРєС‚РЅРѕ РїРѕСЃС‚СЂРѕРµРЅ
+
+        for (int i = 0; i < (int)children.size(); ++i) {
+            if (children[i]->text[0] == firstLetter) {
                 return i;
             }
         }
@@ -241,17 +317,123 @@ struct TtrieNode {
     }
 };
 
+int PassThrew(TtrieNode* root, TtrieNode* beg, std::string word) {
+    //РґР»СЏ РїРѕСЃС‚СЂРѕРµРЅРёСЏ Р·Р° O(n^3)
+    //"РёС‰РµС‚" word РІ РґРµСЂРµРІРµ Рё РґРѕР±Р°Р»СЏРµС‚ РµСЃР»Рё РЅРµ РЅР°С€Р»Р°
+
+    if (beg == root) {
+        if (beg->childBB(word[0]) == nullptr) {
+            beg->AddChildOV(word);
+
+
+            return 1;
+        }
+        else {
+            return PassThrew(root, beg->childBB(word[0]), word);
+        }
+    }
+
+    std::string str = beg->text;
+
+    if (str[0] != word[0]) {
+        printf("error\n");
+        return -1; //С„СѓРЅРєС†РёСЏ Р·Р°РїСѓС‰РµРЅРЅР° РЅРµРєРѕСЂСЂРµРєС‚РЅРѕ
+    }
+
+    for (int i = 0; i < (int)str.size(); ++i) {
+        if ((int)word.size() > i) {
+            if (word[i] == str[i]) {
+                if (i + 1 < (int)word.size())
+                    continue;
+                else
+                    return 0;
+            }
+            else {
+                //СЃР»СѓС‡Р°Р№ РµСЃР»Рё СЃС‚СЂРѕРєР° СЂР°СЃС…РѕРґРёС‚СЃСЏ СЃ РґРѕР±. СЃР»РѕРІРѕРј
+                std::string newWord;
+
+                std::string fp;
+                std::string sp;
+
+                for (int x = 0; x < (int)beg->text.size(); ++x) {
+                    if (x < i) {
+                        fp.push_back(beg->text[x]);
+                    }
+                    else {
+                        sp.push_back(beg->text[x]);
+                    }
+                }
+
+
+                for (int j = i; j < (int)word.size(); ++j) {
+                    newWord.push_back(word[j]);
+                }
+
+                int ps = -1;
+                if (beg->parent != nullptr) {
+                    ps = beg->parent->childIndBB(beg->text[0]);
+                }
+
+                TtrieNode* Past = new TtrieNode(beg->parent, beg->endl);
+                Past->text = fp;
+                beg->text = sp;
+
+                if (ps != -1) {
+                    beg->parent->children[ps] = Past;
+                }
+                beg->parent = Past;
+
+                Past->children.push_back(beg);
+                Past->AddChildOV(newWord);
+
+                return 1; //РґРµСЂРµРІРѕ Р±С‹Р»Рѕ РјРѕР¶РёС„РёС†РёСЂРѕРІР°РЅРѕ, РґРѕР± СЏС‡РµР№РєР°
+            }
+        }
+        else {
+            //СЃР»СѓС‡Р°Р№ РµСЃР»Рё СЃС‚СЂРѕРєР° СЃРѕРґРµСЂР¶РёС‚ РґРѕР±. СЃР»РѕРІРѕ
+            //beg->term.push_back(i-1);
+
+            return 0; //РґРµСЂРµРІРѕ РЅРµ Р±С‹Р»Рѕ РёР·РјРµРЅРµРЅРѕ
+        }
+    }
+
+    //СЃР»СѓС‡Р°Р№, РµСЃР»Рё РґРѕР±. СЃР»РѕРІРѕ СЃРѕРґРµСЂР¶РёС‚ СЃС‚СЂРѕРєСѓ.
+    if (beg->children.size() == 0) {
+        //РµСЃР»Рё РјС‹ РІ Р»РёСЃС‚Рµ
+        beg->text = word;
+
+        return 3; //СЏС‡РµР№РєР° Р±С‹Р»Р° РґРѕСЃС‚СЂРѕРµРЅР°
+    }
+
+    std::string newWord;
+    for (int j = str.size(); j < (int)word.size(); ++j) {
+        newWord.push_back(word[j]);
+    }
+
+    if (beg->childBB(newWord[0]) == nullptr) {
+        beg->AddChildOV(newWord);
+
+
+        return 1;
+    }
+    else {
+        return PassThrew(root, beg->childBB(newWord[0]), newWord);
+    }
+}
+
+
 std::string suffix(std::string line, int s) {
-    //начиная с s до конца
+    //РЅР°С‡РёРЅР°СЏ СЃ s РґРѕ РєРѕРЅС†Р°
 
     std::string ret;
-    for (int i = s; i < line.size(); ++i) {
+    for (int i = s; i < (int)line.size(); ++i) {
         ret.push_back(line[i]);
     }
     return ret;
 }
 
 void PrintTrie(TtrieNode* root, int depth) {
+    //print as numeric
     for (int i = 0; i < depth; ++i) {
         printf("\t");
     }
@@ -276,8 +458,28 @@ void PrintTrie(TtrieNode* root, int depth) {
     if (root->SL.Link != nullptr)std::cout << "(" << root->SL.Link->id << " <-id)|" << root->SL.Link->beg << "_" << root->SL.Link->End();
     else printf("NULL");
     printf("]\n");
-    for (int i = 0; i < root->children.size(); ++i) {
+    for (int i = 0; i < (int)root->children.size(); ++i) {
         PrintTrie(root->children[i], depth + 1);
+    }
+}
+
+void PrintNNTrie(TtrieNode* root, int depth) {
+    //print as not numeric
+    //РІ РґРµСЂРµРІРµ С‚Р°РєРѕРіРѕ С‚РёРїР° РЅРµС‚ РЅРё РјР°СЂРєРµСЂРѕРІ РЅР°С‡Р°Р»Р° Рё РєРѕРЅС†Р°, РЅРё СЃСѓС„С„РёРєСЃРЅС‹С… СЃСЃС‹Р»РѕРє
+    for (int i = 0; i < depth; ++i) {
+        printf("\t");
+    }
+
+    printf("!");
+    for (int i = 0; i < (int)root->text.size(); ++i) {
+        printf("%c", root->text[i]);
+    }
+    printf("!");
+    printf("id: %d (len: %d|%d)\n", root->id, root->Len(), root->SelfLen());
+    
+
+    for (int i = 0; i < (int)root->children.size(); ++i) {
+        PrintNNTrie(root->children[i], depth + 1);
     }
 }
 
@@ -309,9 +511,9 @@ struct TstartPos {
     }
 };
 
-TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позиция в которую мы перешли*/, std::string text, int rightBD, TtrieNode* fromSLtoPOINT /*узел, в который запишем ссылку*/) {
+TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*РїРѕР·РёС†РёСЏ РІ РєРѕС‚РѕСЂСѓСЋ РјС‹ РїРµСЂРµС€Р»Рё*/, std::string text, int rightBD, TtrieNode* fromSLtoPOINT /*СѓР·РµР», РІ РєРѕС‚РѕСЂС‹Р№ Р·Р°РїРёС€РµРј СЃСЃС‹Р»РєСѓ*/) {
     
-    if(DEBUG)printf("approch node: %d term: %d / %d\n", start->id, term, rightBD);
+    if(DEBUG)printf("(%c) approch node: %d term: %d / %d\n", start->text[rightBD], start->id, term, rightBD);
 
     while (start != root && start->Len() - start->SelfLen() >= term) {
         start = start->parent;
@@ -319,26 +521,35 @@ TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позиция в кот
 
     term -= (start->Len() - start->SelfLen());
 
-    if (DEBUG)printf("passed to node: %d term: %d / %d\n", start->id, term, rightBD);
+    if (DEBUG)printf("(%c) passed to node: %d term: %d / %d\n", start->text[rightBD], start->id, term, rightBD);
+    /*if (start->id == 0 && term > 0) {
+        printf("auch\n");
+    }*/
 
-    //start - узел, на котором было продление
-    //term - позиция в нем
-    //fromSLtoPOINT - по какой суф. ссылке можно придти в элемент для продления
+    if (DEBUG) {
+        printf("\n\n");
+        PrintTrie(root, 0);
+        printf("\n\n");
+    }
+
+    //start - СѓР·РµР», РЅР° РєРѕС‚РѕСЂРѕРј Р±С‹Р»Рѕ РїСЂРѕРґР»РµРЅРёРµ
+    //term - РїРѕР·РёС†РёСЏ РІ РЅРµРј
+    //fromSLtoPOINT - РїРѕ РєР°РєРѕР№ СЃСѓС„. СЃСЃС‹Р»РєРµ РјРѕР¶РЅРѕ РїСЂРёРґС‚Рё РІ СЌР»РµРјРµРЅС‚ РґР»СЏ РїСЂРѕРґР»РµРЅРёСЏ
 
 
-    //заходим по позиции внутреннего продления на пред. шаге.
-    //смотрим: можно ли продлить?
-    //если можно, выходим, отправл. на след. шаг
-    //если нельзя, выполняем биения, переходя по суф. ссылкам, пока не будет можно.
+    //Р·Р°С…РѕРґРёРј РїРѕ РїРѕР·РёС†РёРё РІРЅСѓС‚СЂРµРЅРЅРµРіРѕ РїСЂРѕРґР»РµРЅРёСЏ РЅР° РїСЂРµРґ. С€Р°РіРµ.
+    //СЃРјРѕС‚СЂРёРј: РјРѕР¶РЅРѕ Р»Рё РїСЂРѕРґР»РёС‚СЊ?
+    //РµСЃР»Рё РјРѕР¶РЅРѕ, РІС‹С…РѕРґРёРј, РѕС‚РїСЂР°РІР». РЅР° СЃР»РµРґ. С€Р°Рі
+    //РµСЃР»Рё РЅРµР»СЊР·СЏ, РІС‹РїРѕР»РЅСЏРµРј Р±РёРµРЅРёСЏ, РїРµСЂРµС…РѕРґСЏ РїРѕ СЃСѓС„. СЃСЃС‹Р»РєР°Рј, РїРѕРєР° РЅРµ Р±СѓРґРµС‚ РјРѕР¶РЅРѕ.
 
     ++nodeCounter;
 
-    //отдельно обработаем попадание в корень
+    //РѕС‚РґРµР»СЊРЅРѕ РѕР±СЂР°Р±РѕС‚Р°РµРј РїРѕРїР°РґР°РЅРёРµ РІ РєРѕСЂРµРЅСЊ
     if (start == root) {
         if (term <= 0) {
             TtrieNode* ch = root->child(text[rightBD]);
 
-            if (ch == nullptr) { //продлить напрямую не получится, надо доб. ребенка
+            if (ch == nullptr) { //РїСЂРѕРґР»РёС‚СЊ РЅР°РїСЂСЏРјСѓСЋ РЅРµ РїРѕР»СѓС‡РёС‚СЃСЏ, РЅР°РґРѕ РґРѕР±. СЂРµР±РµРЅРєР°
                 try {
                     root->AddChild(rightBD, rightBD);
                 }
@@ -350,58 +561,61 @@ TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позиция в кот
                 aded->SL.Link = root;
                 aded->SL.ind = -1;
 
-                //запиисываем суффиксную ссылку 
+                //Р·Р°РїРёРёСЃС‹РІР°РµРј СЃСѓС„С„РёРєСЃРЅСѓСЋ СЃСЃС‹Р»РєСѓ 
                 if (fromSLtoPOINT != nullptr) {
                     fromSLtoPOINT->SL.Link = aded;
                     fromSLtoPOINT->SL.ind = -1;
                 }
 
-                return TstartPos(-1 /*с какой позиии в элементе по суфссылке ытаться продлить*/, ch, aded); //вернем указатель на элемент, по суф. ссылке которого можно попасть в корень
+                return TstartPos(-1 /*СЃ РєР°РєРѕР№ РїРѕР·РёРёРё РІ СЌР»РµРјРµРЅС‚Рµ РїРѕ СЃСѓС„СЃСЃС‹Р»РєРµ С‹С‚Р°С‚СЊСЃСЏ РїСЂРѕРґР»РёС‚СЊ*/, ch, aded); //РІРµСЂРЅРµРј СѓРєР°Р·Р°С‚РµР»СЊ РЅР° СЌР»РµРјРµРЅС‚, РїРѕ СЃСѓС„. СЃСЃС‹Р»РєРµ РєРѕС‚РѕСЂРѕРіРѕ РјРѕР¶РЅРѕ РїРѕРїР°СЃС‚СЊ РІ РєРѕСЂРµРЅСЊ
             }
             else {
-                //можно продлить напрямую?
+                //РјРѕР¶РЅРѕ РїСЂРѕРґР»РёС‚СЊ РЅР°РїСЂСЏРјСѓСЋ?
                 if (fromSLtoPOINT != nullptr) {
                     fromSLtoPOINT->SL.Link = ch;
                     fromSLtoPOINT->SL.ind = -1;
                 }
 
 
-                return  TstartPos(0, ch, fromSLtoPOINT); //по 0 эл-ту узла по суф. ссылке из fromSLtoPOINT уже продлили, в сле. раз попробуем по 1-му
+                return  TstartPos(0, ch, fromSLtoPOINT); //РїРѕ 0 СЌР»-С‚Сѓ СѓР·Р»Р° РїРѕ СЃСѓС„. СЃСЃС‹Р»РєРµ РёР· fromSLtoPOINT СѓР¶Рµ РїСЂРѕРґР»РёР»Рё, РІ СЃР»Рµ. СЂР°Р· РїРѕРїСЂРѕР±СѓРµРј РїРѕ 1-РјСѓ
             }
         }
         else {
-            TtrieNode* ch = root->child(text[term]);
-            return prolongate(root, /*куда идем*/ ch, term, /*с чем идем*/ text, rightBD, /*откуда идем*/ fromSLtoPOINT);
+            TtrieNode* ch = root->child(text[rightBD]);
+            if (ch == nullptr) {
+                ch = root->child(text[rightBD - term]);
+            }
+            return prolongate(root, /*РєСѓРґР° РёРґРµРј*/ ch, term - 1, /*СЃ С‡РµРј РёРґРµРј*/ text, rightBD, /*РѕС‚РєСѓРґР° РёРґРµРј*/ fromSLtoPOINT);
         }
 
         
 
     }
-    //попали не в корень
+    //РїРѕРїР°Р»Рё РЅРµ РІ РєРѕСЂРµРЅСЊ
     
     ++NRnodeCounter;
 
-    //ссылка указывает на позицию в строке узла
-    //1. попали в конец слова (-1)
+    //СЃСЃС‹Р»РєР° СѓРєР°Р·С‹РІР°РµС‚ РЅР° РїРѕР·РёС†РёСЋ РІ СЃС‚СЂРѕРєРµ СѓР·Р»Р°
+    //1. РїРѕРїР°Р»Рё РІ РєРѕРЅРµС† СЃР»РѕРІР° (-1)
 
     if (term == -1) {
         printf("ERROR!\n");
         return TstartPos(-1, nullptr);
     }
 
-    //2. попали во внутренний узел
+    //2. РїРѕРїР°Р»Рё РІРѕ РІРЅСѓС‚СЂРµРЅРЅРёР№ СѓР·РµР»
 
     else {
-        //есть вероятность что мы попали в терминал, установленный на конце
+        //РµСЃС‚СЊ РІРµСЂРѕСЏС‚РЅРѕСЃС‚СЊ С‡С‚Рѕ РјС‹ РїРѕРїР°Р»Рё РІ С‚РµСЂРјРёРЅР°Р», СѓСЃС‚Р°РЅРѕРІР»РµРЅРЅС‹Р№ РЅР° РєРѕРЅС†Рµ
 
 
         if (start->End() < start->beg + term) {
-            //если мы в точке разрыва, откуда выходят дети
+            //РµСЃР»Рё РјС‹ РІ С‚РѕС‡РєРµ СЂР°Р·СЂС‹РІР°, РѕС‚РєСѓРґР° РІС‹С…РѕРґСЏС‚ РґРµС‚Рё
 
-            //эту ссылку больше не юзаем
+            //СЌС‚Сѓ СЃСЃС‹Р»РєСѓ Р±РѕР»СЊС€Рµ РЅРµ СЋР·Р°РµРј
 
             TtrieNode* ch = start->child(text[rightBD]);
-            if (ch == nullptr) {  //напрямую продлить нельзя, добавляем ребенка
+            if (ch == nullptr) {  //РЅР°РїСЂСЏРјСѓСЋ РїСЂРѕРґР»РёС‚СЊ РЅРµР»СЊР·СЏ, РґРѕР±Р°РІР»СЏРµРј СЂРµР±РµРЅРєР°
                 try {
                     start->AddChild(*(start->endl), *(start->endl));
                 }
@@ -412,25 +626,37 @@ TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позиция в кот
                 TtrieNode* aded = start->child(text[rightBD]);
 
 
-                //запиисываем суффиксную ссылку 
+                //Р·Р°РїРёРёСЃС‹РІР°РµРј СЃСѓС„С„РёРєСЃРЅСѓСЋ СЃСЃС‹Р»РєСѓ 
                 if (fromSLtoPOINT != nullptr) {
+
+                    if (fromSLtoPOINT->parent != root && fromSLtoPOINT->SL.Link == nullptr) {
+                        //РµСЃР»Рё Рё РЅР° РїСЂРµРґС‹РґСѓС‰РµРј С€Р°РіРµ Р±С‹Р»Рѕ РґРµР»РµРЅРёРµ, С‚Рѕ РЅР°РґРѕ РїРµСЂРµСЃС‚Р°РІРёС‚СЊ Рё СЃСЃС‹Р»РєСѓ СЂРѕРґРёС‚РµР»СЏ
+                        fromSLtoPOINT->parent->SL.Link = start;
+                    }
+
                     fromSLtoPOINT->SL.Link = aded;
                     fromSLtoPOINT->SL.ind = -1;
                 }
 
 
                 if (start->SL.Link != nullptr) {
-                    return prolongate(root, /*куда идем*/ start->SL.Link, (aded->Len() - aded->SelfLen()) - 1, /*с чем идем*/ text, rightBD, /*откуда идем*/ aded);
+                    return prolongate(root, /*РєСѓРґР° РёРґРµРј*/ start->SL.Link, (aded->Len() - aded->SelfLen()) - 1, /*СЃ С‡РµРј РёРґРµРј*/ text, rightBD, /*РѕС‚РєСѓРґР° РёРґРµРј*/ aded);
                 }
-                return TstartPos(-1, nullptr); //до сюда по хорошему мы дойти не должны никогда
+                return TstartPos(-1, nullptr); //РґРѕ СЃСЋРґР° РїРѕ С…РѕСЂРѕС€РµРјСѓ РјС‹ РґРѕР№С‚Рё РЅРµ РґРѕР»Р¶РЅС‹ РЅРёРєРѕРіРґР°
             }
             else {
-                //создаем терминал на уже имеющемся узле
-                //если узел длины 1, то терминал не нужен, но мы все равно его делаем потому что так надо
-                //не делаем ничего
+                //СЃРѕР·РґР°РµРј С‚РµСЂРјРёРЅР°Р» РЅР° СѓР¶Рµ РёРјРµСЋС‰РµРјСЃСЏ СѓР·Р»Рµ
+                //РµСЃР»Рё СѓР·РµР» РґР»РёРЅС‹ 1, С‚Рѕ С‚РµСЂРјРёРЅР°Р» РЅРµ РЅСѓР¶РµРЅ, РЅРѕ РјС‹ РІСЃРµ СЂР°РІРЅРѕ РµРіРѕ РґРµР»Р°РµРј РїРѕС‚РѕРјСѓ С‡С‚Рѕ С‚Р°Рє РЅР°РґРѕ
+                //РЅРµ РґРµР»Р°РµРј РЅРёС‡РµРіРѕ
 
-                //запиисываем суффиксную ссылку 
+                //Р·Р°РїРёРёСЃС‹РІР°РµРј СЃСѓС„С„РёРєСЃРЅСѓСЋ СЃСЃС‹Р»РєСѓ 
                 if (fromSLtoPOINT != nullptr) {
+
+                    if (fromSLtoPOINT->parent != root && fromSLtoPOINT->SL.Link == nullptr) {
+                        //РµСЃР»Рё Рё РЅР° РїСЂРµРґС‹РґСѓС‰РµРј С€Р°РіРµ Р±С‹Р»Рѕ РґРµР»РµРЅРёРµ, С‚Рѕ РЅР°РґРѕ РїРµСЂРµСЃС‚Р°РІРёС‚СЊ Рё СЃСЃС‹Р»РєСѓ СЂРѕРґРёС‚РµР»СЏ
+                        fromSLtoPOINT->parent->SL.Link = start;
+                    }
+
                     fromSLtoPOINT->SL.Link = ch;
                     fromSLtoPOINT->SL.ind = -1;
                 }
@@ -443,20 +669,20 @@ TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позиция в кот
         }
         else
         if (start->End() >= term && start->text[start->beg + term] == text[rightBD]) {
-            //елси можно напрямую продлить вхождение, то ничего не делаем
+            //РµР»СЃРё РјРѕР¶РЅРѕ РЅР°РїСЂСЏРјСѓСЋ РїСЂРѕРґР»РёС‚СЊ РІС…РѕР¶РґРµРЅРёРµ, С‚Рѕ РЅРёС‡РµРіРѕ РЅРµ РґРµР»Р°РµРј
             
             return TstartPos(term + (start->Len() - start->SelfLen()), start, fromSLtoPOINT);
         }
         else {
-            //если след. буква строки узла отлична от буквы в доб. строке, то нужно произвести разделение
+            //РµСЃР»Рё СЃР»РµРґ. Р±СѓРєРІР° СЃС‚СЂРѕРєРё СѓР·Р»Р° РѕС‚Р»РёС‡РЅР° РѕС‚ Р±СѓРєРІС‹ РІ РґРѕР±. СЃС‚СЂРѕРєРµ, С‚Рѕ РЅСѓР¶РЅРѕ РїСЂРѕРёР·РІРµСЃС‚Рё СЂР°Р·РґРµР»РµРЅРёРµ
 
-            //прежде проверим, что мы не в конце строки и не можем продолжить проверку на ребенке
+            //РїСЂРµР¶РґРµ РїСЂРѕРІРµСЂРёРј, С‡С‚Рѕ РјС‹ РЅРµ РІ РєРѕРЅС†Рµ СЃС‚СЂРѕРєРё Рё РЅРµ РјРѕР¶РµРј РїСЂРѕРґРѕР»Р¶РёС‚СЊ РїСЂРѕРІРµСЂРєСѓ РЅР° СЂРµР±РµРЅРєРµ
             TtrieNode* ssL = start->SL.Link;
             TtrieNode* past = start->Deseparate(term - 1); 
-            //при десепарации ссылка внутреннего терминала стала на место глобальной ссылки укороченного start, а старая глобальная ссылка start слала глобальной ссылкой next
-            //в next порожденный разделением узел
+            //РїСЂРё РґРµСЃРµРїР°СЂР°С†РёРё СЃСЃС‹Р»РєР° РІРЅСѓС‚СЂРµРЅРЅРµРіРѕ С‚РµСЂРјРёРЅР°Р»Р° СЃС‚Р°Р»Р° РЅР° РјРµСЃС‚Рѕ РіР»РѕР±Р°Р»СЊРЅРѕР№ СЃСЃС‹Р»РєРё СѓРєРѕСЂРѕС‡РµРЅРЅРѕРіРѕ start, Р° СЃС‚Р°СЂР°СЏ РіР»РѕР±Р°Р»СЊРЅР°СЏ СЃСЃС‹Р»РєР° start СЃР»Р°Р»Р° РіР»РѕР±Р°Р»СЊРЅРѕР№ СЃСЃС‹Р»РєРѕР№ next
+            //РІ next РїРѕСЂРѕР¶РґРµРЅРЅС‹Р№ СЂР°Р·РґРµР»РµРЅРёРµРј СѓР·РµР»
             // |----START----|
-            // |-NEXT-||START|
+            // |-PAST-||START|
 
             try {
                 past->AddChild(*(past->endl), *(past->endl));
@@ -466,13 +692,13 @@ TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позиция в кот
             }
 
             TtrieNode* aded = past->child(text[rightBD]);
-            past->SL.Link = root; //если на след шаге тоже выполним разбиени, то ссылка перекроется новой, иначе root и нужен
+            past->SL.Link = past; //РµСЃР»Рё РЅР° СЃР»РµРґ С€Р°РіРµ С‚РѕР¶Рµ РІС‹РїРѕР»РЅРёРј СЂР°Р·Р±РёРµРЅРё, С‚Рѕ СЃСЃС‹Р»РєР° РїРµСЂРµРєСЂРѕРµС‚СЃСЏ РЅРѕРІРѕР№, РёРЅР°С‡Рµ root Рё РЅСѓР¶РµРЅ
             past->SL.ind = -1;
 
-            //устанавливаем ссылку (на добваленное)
+            //СѓСЃС‚Р°РЅР°РІР»РёРІР°РµРј СЃСЃС‹Р»РєСѓ (РЅР° РґРѕР±РІР°Р»РµРЅРЅРѕРµ)
             if (fromSLtoPOINT != nullptr) {
-                if (fromSLtoPOINT->parent != root) {
-                    //если и на предыдущем шаге было деление, то надо переставить и ссылку родителя
+                if (fromSLtoPOINT->parent != root && fromSLtoPOINT->SL.Link == nullptr) {
+                    //РµСЃР»Рё Рё РЅР° РїСЂРµРґС‹РґСѓС‰РµРј С€Р°РіРµ Р±С‹Р»Рѕ РґРµР»РµРЅРёРµ, С‚Рѕ РЅР°РґРѕ РїРµСЂРµСЃС‚Р°РІРёС‚СЊ Рё СЃСЃС‹Р»РєСѓ СЂРѕРґРёС‚РµР»СЏ
                     fromSLtoPOINT->parent->SL.Link = past;
                 }
 
@@ -480,21 +706,21 @@ TstartPos prolongate(TtrieNode* root, TtrieNode* start, int term /*позиция в кот
                 fromSLtoPOINT->SL.ind = -1;
             }
 
-            //идем дальше
+            //РёРґРµРј РґР°Р»СЊС€Рµ
             if (ssL != nullptr) {
 
-                return prolongate(root, /*куда идем*/ ssL  , term + (past->Len() - past->SelfLen()) - 1,/*с чем идем*/ text, rightBD, /*откуда идем*/ aded);
-                //на след. шаге надо установить суф. ссылку на доб. эл.
-                //В этой ветке ссылка, по которой мы отправляемся, естественно, не затирается
+                return prolongate(root, /*РєСѓРґР° РёРґРµРј*/ ssL  , term + (past->Len() - past->SelfLen()) - 1,/*СЃ С‡РµРј РёРґРµРј*/ text, rightBD, /*РѕС‚РєСѓРґР° РёРґРµРј*/ aded);
+                //РЅР° СЃР»РµРґ. С€Р°РіРµ РЅР°РґРѕ СѓСЃС‚Р°РЅРѕРІРёС‚СЊ СЃСѓС„. СЃСЃС‹Р»РєСѓ РЅР° РґРѕР±. СЌР».
+                //Р’ СЌС‚РѕР№ РІРµС‚РєРµ СЃСЃС‹Р»РєР°, РїРѕ РєРѕС‚РѕСЂРѕР№ РјС‹ РѕС‚РїСЂР°РІР»СЏРµРјСЃСЏ, РµСЃС‚РµСЃС‚РІРµРЅРЅРѕ, РЅРµ Р·Р°С‚РёСЂР°РµС‚СЃСЏ
             }
-            return TstartPos(-1, nullptr);//выполнили проход третьим путем
+            return TstartPos(-1, nullptr);//РІС‹РїРѕР»РЅРёР»Рё РїСЂРѕС…РѕРґ С‚СЂРµС‚СЊРёРј РїСѓС‚РµРј
         }
     }
 
 }
 
 TstartPos startAdd(TtrieNode* root, std::string text, int end, TtrieNode* lastEnd, TstartPos toSt) {
-    //функция запускающая добавление элемента в дерево из корня
+    //С„СѓРЅРєС†РёСЏ Р·Р°РїСѓСЃРєР°СЋС‰Р°СЏ РґРѕР±Р°РІР»РµРЅРёРµ СЌР»РµРјРµРЅС‚Р° РІ РґРµСЂРµРІРѕ РёР· РєРѕСЂРЅСЏ
     TtrieNode* st = root;
     int stg = -1;
 
@@ -522,10 +748,24 @@ TstartPos startAdd(TtrieNode* root, std::string text, int end, TtrieNode* lastEn
     return toSt;
 }
 
+std::string concat(std::string lhs, std::string rhs) {
+    for (int i = 0; i < (int)rhs.size(); ++i) {
+        lhs.push_back(rhs[i]);
+    }
+    return lhs;
+}
+
+std::vector<int> concat(std::vector<int> lhs, std::vector<int> rhs) {
+    for (int i = 0; i < (int)rhs.size(); ++i) {
+        lhs.push_back(rhs[i]);
+    }
+    return lhs;
+}
 
 class TsuffixTrie {
-    //сжатый суффиксный луч
+    //СЃР¶Р°С‚С‹Р№ СЃСѓС„С„РёРєСЃРЅС‹Р№ Р»СѓС‡
 private:
+    bool IsNumeric; //РѕРїСЂРµРґРµР»СЏРµС‚СЃСЏ Р»Рё С‚РµРєСЃС‚ РІ СѓР·Р»Р°С… РїРѕР·РёС†РёРµР№ РЅР°С‡Р°Р»Р° (true) РёР»Рё Р¶Рµ РѕРЅ Р·Р°РїРёСЃР°РЅ РїСЂСЏРјРѕ РІ СѓР·Р»Рµ (false)
     TtrieNode* root;
 
     TtrieNode* lastNon;
@@ -534,6 +774,7 @@ private:
 public:
 
     TsuffixTrie(std::string text) {
+        IsNumeric = true;
         endID = new int(-1);
 
         root = new TtrieNode("|ROOT|", nullptr, endID);
@@ -545,8 +786,22 @@ public:
 
     }
 
+    TsuffixTrie(bool num) {
+        IsNumeric = false; 
+
+        endID = new int(-1);
+
+        root = new TtrieNode("|ROOT|", nullptr, endID);
+        root->len = 0;
+        root->end = -1;
+        root->text = "ROOT";
+        lastNon = root;
+        toSt = TstartPos(-1, nullptr);
+    }
+
     ~TsuffixTrie() {
         delete root;
+        delete endID;
     }
 
     TtrieNode* Root() {
@@ -557,8 +812,16 @@ public:
         root = newRoot;
     }
 
+    void endPlus() {
+        (*endID)++;
+    }
+
+    bool Numeric() {
+        return IsNumeric;
+    }
+
     int Add(std::string text, int end) {
-        (*endID)++; //тут че у всех операций приоритет выше чем у разыменования??
+        (*endID)++; //С‚СѓС‚ С‡Рµ Сѓ РІСЃРµС… РѕРїРµСЂР°С†РёР№ РїСЂРёРѕСЂРёС‚РµС‚ РІС‹С€Рµ С‡РµРј Сѓ СЂР°Р·С‹РјРµРЅРѕРІР°РЅРёСЏ??
         try {
             toSt = startAdd(root, text, end, lastNon, toSt);
         }
@@ -570,15 +833,13 @@ public:
     }
 
     void Print() {
-        std::cout << "TEXT: " << root->text << "\nTRIE:\n";
-        PrintTrie(root, 0);
-    }
-
-    std::vector<int> concat(std::vector<int> lhs, std::vector<int> rhs) {
-        for (int i = 0; i < rhs.size(); ++i) {
-            lhs.push_back(rhs[i]);
+        if (IsNumeric) {
+            std::cout << "TEXT: " << root->text << "\nTRIE:\n";
+            PrintTrie(root, 0);
         }
-        return lhs;
+        else {
+            PrintNNTrie(root, 0);
+        }
     }
 
     std::vector<int> takeAllEnds(TtrieNode* start) {
@@ -589,7 +850,7 @@ public:
             return std::vector<int>(1, start->text.size() - start->Len());
         }
         else {
-            for (int i = 0; i < next.size(); ++i) {
+            for (int i = 0; i < (int)next.size(); ++i) {
                 res = concat(res, takeAllEnds(next[i]));
             }
             return res;
@@ -605,7 +866,7 @@ public:
         }
 
         int pos = 0;
-        for (int i = 0; i < exp.size(); ++i) {
+        for (int i = 0; i < (int)exp.size(); ++i) {
             if (cur->sInd(pos) == 0) {
 
                 if (cur->child(exp[i]) == nullptr) {
@@ -643,7 +904,7 @@ int rad(int digit, int pos) {
     return res;
 }
 
-std::vector<int> radixSort(std::vector<int> input) { //чекнул, реально линейное
+std::vector<int> radixSort(std::vector<int> input) { //С‡РµРєРЅСѓР», СЂРµР°Р»СЊРЅРѕ Р»РёРЅРµР№РЅРѕРµ
     std::vector<int> prom(input.size());
     int countArr[11]; 
     for (int i = 0; i < 11; ++i)
@@ -651,13 +912,13 @@ std::vector<int> radixSort(std::vector<int> input) { //чекнул, реально линейное
 
     int digit = 1;
 
-    while (countArr[0] != input.size()) {
+    while (countArr[0] != (int)input.size()) {
 
 
         for (int i = 0; i < 11; ++i)
             countArr[i] = 0;
         
-        for (int i = 0; i < input.size(); ++i) {
+        for (int i = 0; i < (int)input.size(); ++i) {
             countArr[rad(input[i], digit) != -1 ? rad(input[i], digit) + 1 : 0] += 1;
         }
 
@@ -672,7 +933,7 @@ std::vector<int> radixSort(std::vector<int> input) { //чекнул, реально линейное
             countArr[i] += countArr[i - 1];
         }
 
-        for (int i = 0; i < input.size(); ++i) {
+        for (int i = 0; i < (int)input.size(); ++i) {
             int rdn = rad(input[i], digit);
             prom[countArr[rdn != -1 ? rdn + 1 : 0]] = input[i];
             countArr[rdn != -1 ? rdn + 1 : (0)] ++;
@@ -688,7 +949,7 @@ std::vector<int> radixSort(std::vector<int> input) { //чекнул, реально линейное
 }
 
 std::string prefix(std::string line, int s) {
-    //начиная с начала, до s (не включая)
+    //РЅР°С‡РёРЅР°СЏ СЃ РЅР°С‡Р°Р»Р°, РґРѕ s (РЅРµ РІРєР»СЋС‡Р°СЏ)
 
     std::string ret;
     for (int i = 0; i < s; ++i) {
@@ -697,17 +958,60 @@ std::string prefix(std::string line, int s) {
     return ret;
 }
 
+TsuffixTrie* constructTestTree(std::string text) {
+    //СЃС‚СЂРѕРёС‚ РїСЂРµС„РёРєСЃРЅРѕРµ РґРµСЂРµРІРѕ РёР· text
+    //РЅР°РёС‹РЅС‹Р№ СЃРїРѕСЃРѕР± Р·Р° O(n^3)
+    //std::cout << text << std::endl << std::endl;
 
+    TsuffixTrie* trie = new TsuffixTrie(true);
+
+    for (int i = 0; i <= (int)text.size(); ++i) {
+        for (int j = 0; j < i; ++j) {
+            //std::cout << suffix(prefix(text, i), j) << std::endl;
+            PassThrew(trie->Root(), trie->Root(), suffix(prefix(text, i), j));
+        }
+
+        trie->endPlus();
+        //trie->Print();
+    }
+
+    return trie;
+}
+
+std::string Bypass(std::string res, TtrieNode* start, bool num) {
+    //РѕР±С…РѕРґРёС‚ РґРµСЂРµРІРѕ, СЃРѕР±СЂР°РµС‚ РµРіРѕ РІ СЃС‚СЂРѕРєСѓ
+    if (num) {
+        for (int i = start->beg; i <= start->End(); ++i) {
+            res.push_back(start->text[i]);
+        }
+    }
+    else {
+        if (start->text != "ROOT")
+        for (int i = 0; i < (int)start->text.size(); ++i) {
+            res.push_back(start->text[i]);
+        }
+    }
+
+    if (start->IsList()) {
+        return res;
+    }
+    else {
+        for (int i = 0; i < (int)start->children.size(); ++i) {
+            res = concat(res, Bypass(std::string(), start->children[i], num));
+        }
+        return res;
+    }
+}
 
 TsuffixTrie* constructTree(std::string text) {
-    //строит префиксное дерево из text
+    //СЃС‚СЂРѕРёС‚ РїСЂРµС„РёРєСЃРЅРѕРµ РґРµСЂРµРІРѕ РёР· text
 
     TsuffixTrie* trie = new TsuffixTrie(text);
 
-    for (int i = 0; i < text.size(); ++i) {
+    for (int i = 0; i < (int)text.size(); ++i) {
         int k = trie->Add(text, i);
-        //trie->Print();
-        //printf("----------------\n");   
+        if (DEBUG) trie->Print();
+        if (DEBUG) printf("----------------\n");
         if (k != 0) {
             return nullptr;
         }
@@ -716,15 +1020,61 @@ TsuffixTrie* constructTree(std::string text) {
     return trie;
 }
 
+bool AreEqual(TsuffixTrie* lhs, TsuffixTrie* rhs) {
+    bool lIsNum = lhs->Numeric();
+    bool RIsNum = rhs->Numeric();
+
+    std::string L = Bypass(std::string(), lhs->Root(), lIsNum);
+    std::string R = Bypass(std::string(), rhs->Root(), RIsNum);
+
+    if (L.size() != R.size()) {
+        printf("size missmatch\n");
+        std::cout << L << std::endl <<  R << std::endl;
+        return 0;
+    }
+    for (int i = 0; i < (int)L.size(); ++i) {
+        if (L[i] != R[i]) {
+            printf("missmatch in pos %d\n", i);
+            std::cout << L << std::endl << R << std::endl;
+            for (int k = 0; k < i; ++k) {
+                printf(" ");
+            }
+            printf("!\n");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
 int main() {
 
     std::string exmp;
     std::string text;
-    std::cin >> exmp;
-    std::cin >> text;
+
+    char inp = 0;
+    
+    
+    auto tm0 = std::chrono::steady_clock::now();
+
+    int ch = scanf("%c", &inp);
+    while(inp != '\n' && ch != EOF) {
+        exmp.push_back(inp);
+        ch = scanf("%c", &inp);
+    }
+    
+
+    ch = scanf("%c", &inp);
+    while(inp != '\n' && ch != EOF) {
+        text.push_back(inp);
+        ch = scanf("%c", &inp);
+    }
     text.push_back('$');
 
+    auto tm11 = std::chrono::steady_clock::now();
     TsuffixTrie* trie = constructTree(text);
+    auto tm12 = std::chrono::steady_clock::now();
 
     if (trie == nullptr) {
         printf("allocation error!\n");
@@ -732,9 +1082,34 @@ int main() {
     }
 
     std::vector<int> res = trie->locate(exmp);
+    auto tm21 = std::chrono::steady_clock::now();
     res = radixSort(res);
+    auto tm22 = std::chrono::steady_clock::now();
 
-    for (int i = 0; i < res.size(); ++i) {
+    for (int i = 0; i < (int)res.size(); ++i) {
         printf("%d\n", res[i] + 1);
     }
+
+    trie->Print();
+    
+    auto tm1 = std::chrono::steady_clock::now();
+    auto delt = tm1 - tm0;
+    std::cerr << "test complete| " << std::chrono::duration_cast<std::chrono::milliseconds>(delt).count()<< "ms" <<std::endl;
+    std::cerr << "\t nodes visited: " << nodeCounter << std::endl;
+    auto delt1 = tm12 - tm11;
+    std::cerr << "\t construction: " << std::chrono::duration_cast<std::chrono::milliseconds>(delt1).count()<< "ms" <<std::endl;
+    auto delt2 = tm21 - tm12;
+    std::cerr << "\t location: " << std::chrono::duration_cast<std::chrono::milliseconds>(delt2).count()<< "ms" <<std::endl;
+    auto delt3 = tm22 - tm21;
+    std::cerr << "\t sorting: " << std::chrono::duration_cast<std::chrono::milliseconds>(delt3).count()<< "ms" <<std::endl;
+
+    TsuffixTrie* test = constructTestTree(text);
+    if(AreEqual(test, trie)) {
+        printf("\n\n sructure OK\n");
+    }
+    else {
+        printf("\n\n structure missmatch\n");
+    }
+
+    delete trie;
 }
